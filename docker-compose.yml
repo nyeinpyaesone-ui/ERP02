@@ -1,0 +1,257 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # DATABASE LAYER - PostgreSQL 16 (ACID Compliant)
+  # =============================================================================
+  db:
+    image: postgres:16-alpine
+    container_name: erp_postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-erp_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-SecureErpP@ss2024}
+      POSTGRES_DB: ${DB_NAME:-erp_production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/app/db/erp_myanmar_master_data.sql:/docker-entrypoint-initdb.d/01_myanmar_master_data.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-erp_admin} -d ${DB_NAME:-erp_production}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+  # =============================================================================
+  # CACHE LAYER - Redis 7
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: erp_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+  # =============================================================================
+  # MESSAGE BROKER - RabbitMQ 3.13 (Event-Driven Architecture)
+  # =============================================================================
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: erp_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-erp_bus}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-SecureBusP@ss2024}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+  # =============================================================================
+  # SEARCH ENGINE - Elasticsearch 8.12
+  # =============================================================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    container_name: erp_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+  # =============================================================================
+  # BACKEND API - FastAPI (Core Business Modules)
+  # =============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: erp_backend
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-erp_admin}:${DB_PASSWORD:-SecureErpP@ss2024}@db:5432/${DB_NAME:-erp_production}
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-erp_bus}:${RABBITMQ_PASSWORD:-SecureBusP@ss2024}@rabbitmq:5672/
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      SECRET_KEY: ${SECRET_KEY:-YourSuperSecretKeyForJWT2024!}
+      ENVIRONMENT: production
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+  # =============================================================================
+  # BACKGROUND WORKERS - Async Task Processing
+  # =============================================================================
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: erp_worker
+    command: python -m app.workers.main
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-erp_admin}:${DB_PASSWORD:-SecureErpP@ss2024}@db:5432/${DB_NAME:-erp_production}
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-erp_bus}:${RABBITMQ_PASSWORD:-SecureBusP@ss2024}@rabbitmq:5672/
+    depends_on:
+      - backend
+      - rabbitmq
+      - redis
+    volumes:
+      - ./backend/app:/app/app
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+  # =============================================================================
+  # ADMIN PORTAL - Next.js 14 (Management Dashboard)
+  # =============================================================================
+  admin-portal:
+    build:
+      context: ./frontend/admin-portal
+      dockerfile: Dockerfile
+    container_name: erp_admin_portal
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000/ws
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+  # =============================================================================
+  # CLIENT DASHBOARD - React 18 (User Portal)
+  # =============================================================================
+  client-dashboard:
+    build:
+      context: ./frontend/client-dashboard
+      dockerfile: Dockerfile
+    container_name: erp_client_dashboard
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_WS_URL: ws://localhost:8000/ws
+    depends_on:
+      - backend
+    ports:
+      - "3001:3001"
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+  # =============================================================================
+  # REVERSE PROXY - Nginx
+  # =============================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: erp_nginx
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - admin-portal
+      - client-dashboard
+    ports:
+      - "80:80"
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+  # =============================================================================
+  # MONITORING - Prometheus
+  # =============================================================================
+  prometheus:
+    image: prom/prometheus:v2.49.0
+    container_name: erp_prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+  # =============================================================================
+  # VISUALIZATION - Grafana
+  # =============================================================================
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: erp_grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-SecureGrafP@ss2024}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3002:3000"
+    networks:
+      - erp_network
+    restart: unless-stopped
+
+networks:
+  erp_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  elasticsearch_data:
+  prometheus_data:
+  grafana_data:
