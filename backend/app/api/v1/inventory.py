@@ -86,7 +86,7 @@ async def create_product(product: ProductCreate, db: AsyncSession = Depends(get_
     await db.commit()
     await db.refresh(new_product)
     await cache_manager.delete_pattern(f"products:{current_user.tenant_id}:*")
-    await event_bus.publish("inventory.product_created", {"product_id": str(new_product.id), "tenant_id": str(current_user.tenant_id)})
+    await event_bus.publish_event("scm", "product_created", payload={"product_id": str(new_product.id), "tenant_id": str(current_user.tenant_id)})
     return {"id": str(new_product.id), "sku": new_product.sku, "name": new_product.name}
 
 @router.get("/products/{product_id}")
@@ -148,7 +148,7 @@ async def create_stock_movement(movement: StockMovementCreate, db: AsyncSession 
 
     await db.commit()
     await cache_manager.delete_pattern(f"products:{current_user.tenant_id}:*")
-    await event_bus.publish("inventory.stock_moved", {"product_id": movement.product_id, "quantity": movement.quantity,
+    await event_bus.publish_event("scm", "stock_moved", payload={"product_id": movement.product_id, "quantity": movement.quantity,
                                                          "type": movement.movement_type})
     return {"success": True, "new_quantity": product.quantity_on_hand, "status": product.status.value}
 
