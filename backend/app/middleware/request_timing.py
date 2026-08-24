@@ -1,4 +1,3 @@
-""""Request timing middleware for performance monitoring."""
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 import time

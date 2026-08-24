@@ -1,4 +1,3 @@
-"""Background task scheduler with recurring jobs and health monitoring."""
 import asyncio
 from datetime import datetime, timedelta
 from typing import Callable, Dict
@@ -16,7 +15,7 @@ class SchedulerService:
         self._running = True
         logger.info("scheduler_started")
 
-        # Register recurring tasks
+
         self._schedule("inventory_reorder_check", self._check_reorder_points, hours=6)
         self._schedule("invoice_reminder", self._send_invoice_reminders, hours=24)
         self._schedule("ai_daily_digest", self._generate_ai_digest, hours=24)

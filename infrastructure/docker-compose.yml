@@ -56,6 +56,34 @@ services:
     networks:
       - erp-network
 
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: erp-worker
+    command: python -m app.workers.event_worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-erp_admin}:${DB_PASSWORD:-changeme}@postgres:5432/${DB_NAME:-ai_erp}
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-erp_user}:${RABBITMQ_PASS:-changeme}@rabbitmq:5672/
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - SECRET_KEY=${SECRET_KEY:-supersecretkeychangeme}
+      - DEBUG=${DEBUG:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ../backend:/app
+    networks:
+      - erp-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
   ollama:
     image: ollama/ollama:latest
     container_name: erp-ollama

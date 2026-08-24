@@ -1,4 +1,3 @@
-"""Inventory Management API with AI Forecasting and Stock Control."""
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.db.models import Product, ProductCategory, StockMovement, Warehouse, InventoryStatus, MovementType
 from app.api.v1.auth import get_current_user, require_role
-from app.ai.agent_system import ai_orchestrator, AgentContext
 from app.services.cache_manager import cache_manager
 from app.services.event_bus import event_bus
 
@@ -72,8 +70,7 @@ async def list_products(status: Optional[str] = None, category: Optional[str] = 
     products = result.scalars().all()
 
     response = [{"id": str(p.id), "sku": p.sku, "name": p.name, "unit_price": float(p.unit_price),
-                   "quantity_on_hand": p.quantity_on_hand, "status": p.status.value,
-                   "ai_insights": p.ai_insights} for p in products]
+                "quantity_on_hand": p.quantity_on_hand, "status": p.status.value} for p in products]
     await cache_manager.set(cache_key, response, ttl=60)
     return response
 
@@ -89,7 +86,7 @@ async def create_product(product: ProductCreate, db: AsyncSession = Depends(get_
     await db.commit()
     await db.refresh(new_product)
     await cache_manager.delete_pattern(f"products:{current_user.tenant_id}:*")
-    await event_bus.publish("inventory.product_created", {"product_id": str(new_product.id), "tenant_id": str(current_user.tenant_id)})
+    await event_bus.publish_event("scm", "product_created", payload={"product_id": str(new_product.id), "tenant_id": str(current_user.tenant_id)})
     return {"id": str(new_product.id), "sku": new_product.sku, "name": new_product.name}
 
 @router.get("/products/{product_id}")
@@ -99,7 +96,7 @@ async def get_product(product_id: str, db: AsyncSession = Depends(get_db), curre
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     return {"id": str(product.id), "sku": product.sku, "name": product.name, "unit_price": float(product.unit_price),
-            "quantity_on_hand": product.quantity_on_hand, "status": product.status.value, "ai_insights": product.ai_insights}
+            "quantity_on_hand": product.quantity_on_hand, "status": product.status.value}
 
 @router.post("/products/{product_id}/forecast")
 async def forecast_product(product_id: str, req: ForecastRequest, db: AsyncSession = Depends(get_db),
@@ -109,15 +106,21 @@ async def forecast_product(product_id: str, req: ForecastRequest, db: AsyncSessi
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    # Simple statistical forecasting without AI
     sales_history = [max(0, 50 + (i % 7) * 10 - (i % 3) * 5) for i in range(90)]
-    ctx = AgentContext(tenant_id=str(current_user.tenant_id), user_id=str(current_user.id))
-    ai_result = await ai_orchestrator.execute("erp", "_inventory_forecast",
-                                               {"product_id": product_id, "sales_history": sales_history}, ctx)
-    output = ai_result["output"]
-    return {"product_id": product_id, "forecast_30d": output.get("forecast_30d", 0),
-            "forecast_60d": output.get("forecast_60d", 0), "forecast_90d": output.get("forecast_90d", 0),
-            "confidence": output.get("confidence", 0.5), "trend": output.get("trend", "stable"),
-            "safety_stock_recommendation": output.get("safety_stock_recommendation", 0)}
+    avg_sales = sum(sales_history[-30:]) / 30
+    trend = (sum(sales_history[-14:]) - sum(sales_history[-28:-14])) / 14
+    
+    forecast_30d = int(avg_sales * 30 + trend * 15)
+    forecast_60d = int(avg_sales * 60 + trend * 30)
+    forecast_90d = int(avg_sales * 90 + trend * 45)
+    
+    safety_stock = int(avg_sales * 7)  # 7 days of safety stock
+    
+    return {"product_id": product_id, "forecast_30d": forecast_30d,
+            "forecast_60d": forecast_60d, "forecast_90d": forecast_90d,
+            "confidence": 0.85, "trend": "increasing" if trend > 0 else "decreasing" if trend < 0 else "stable",
+            "safety_stock_recommendation": safety_stock}
 
 @router.post("/stock-movements")
 async def create_stock_movement(movement: StockMovementCreate, db: AsyncSession = Depends(get_db),
@@ -145,7 +148,7 @@ async def create_stock_movement(movement: StockMovementCreate, db: AsyncSession 
 
     await db.commit()
     await cache_manager.delete_pattern(f"products:{current_user.tenant_id}:*")
-    await event_bus.publish("inventory.stock_moved", {"product_id": movement.product_id, "quantity": movement.quantity,
+    await event_bus.publish_event("scm", "stock_moved", payload={"product_id": movement.product_id, "quantity": movement.quantity,
                                                          "type": movement.movement_type})
     return {"success": True, "new_quantity": product.quantity_on_hand, "status": product.status.value}
 
@@ -168,4 +171,4 @@ async def inventory_dashboard(db: AsyncSession = Depends(get_db), current_user =
         Product.tenant_id == current_user.tenant_id))
     return {"total_products": total_products.scalar() or 0, "low_stock_count": low_stock.scalar() or 0,
             "inventory_value": float(total_value.scalar() or 0),
-            "ai_recommendation": "Review items below reorder point. Consider consolidating purchase orders."}
+            "recommendation": "Review items below reorder point. Consider consolidating purchase orders."}

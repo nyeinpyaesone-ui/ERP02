@@ -1,4 +1,3 @@
-""""Audit logging middleware for all data mutations."""
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession

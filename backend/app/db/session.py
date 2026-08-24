@@ -1,4 +1,3 @@
-"""Async Database Session Management - SQLAlchemy 2.0"""
 from sqlalchemy.ext.asyncio import (
     AsyncSession, create_async_engine, async_sessionmaker, AsyncAttrs
 )
@@ -11,7 +10,7 @@ from app.config import settings
 
 logger = structlog.get_logger()
 
-# Naming convention for constraints
+
 convention = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_name)s",
@@ -27,7 +26,7 @@ class Base(AsyncAttrs, DeclarativeBase):
     def __tablename__(cls) -> str:
         return cls.__name__.lower() + "s"
 
-# Create async engine with connection pooling
+
 engine = create_async_engine(
     str(settings.DATABASE_URL).replace("postgresql://", "postgresql+asyncpg://"),
     pool_size=settings.DATABASE_POOL_SIZE,
@@ -48,7 +47,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 @asynccontextmanager
 async def get_db():
-    """Dependency injection context manager for database sessions."""
+
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -60,12 +59,12 @@ async def get_db():
             await session.close()
 
 async def init_db():
-    """Initialize database schema."""
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("database_initialized")
 
 async def close_db():
-    """Close database connections."""
+
     await engine.dispose()
     logger.info("database_connections_closed")

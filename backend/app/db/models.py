@@ -1,4 +1,3 @@
-"""Complete Database Models for AI ERP System v2.0"""
 import uuid
 from datetime import datetime, date, timedelta
 from decimal import Decimal
@@ -15,14 +14,13 @@ from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 
 from app.db.session import Base
 
-# ==================== ENUMS ====================
+
 class UserRole(str, PyEnum):
     SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
     MANAGER = "manager"
     USER = "user"
     AUDITOR = "auditor"
-    AI_AGENT = "ai_agent"
 
 class InventoryStatus(str, PyEnum):
     IN_STOCK = "in_stock"
@@ -75,7 +73,7 @@ class MovementType(str, PyEnum):
     ADJUSTMENT = "adjustment"
     TRANSFER = "transfer"
 
-# ==================== TENANT & USER ====================
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -149,7 +147,7 @@ class Department(Base):
         UniqueConstraint("tenant_id", "code", name="uq_department_tenant_code"),
     )
 
-# ==================== INVENTORY ====================
+
 class ProductCategory(Base):
     __tablename__ = "product_categories"
 
@@ -183,7 +181,6 @@ class Product(Base):
     dimensions: Mapped[Optional[Dict]] = mapped_column(JSONB, nullable=True)
     status: Mapped[InventoryStatus] = mapped_column(Enum(InventoryStatus), default=InventoryStatus.IN_STOCK)
     tags: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String), nullable=True)
-    ai_insights: Mapped[Optional[Dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -228,7 +225,7 @@ class Warehouse(Base):
         UniqueConstraint("tenant_id", "code", name="uq_warehouse_tenant_code"),
     )
 
-# ==================== CRM ====================
+
 class Customer(Base):
     __tablename__ = "customers"
 
@@ -248,7 +245,7 @@ class Customer(Base):
     industry: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     lead_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
-    ai_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    risk_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     tags: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String), nullable=True)
     custom_fields: Mapped[Optional[Dict]] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -280,7 +277,7 @@ class SalesOrder(Base):
     total_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    ai_forecast: Mapped[Optional[Dict]] = mapped_column(JSONB, nullable=True)
+    demand_forecast: Mapped[Optional[Dict]] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -310,13 +307,13 @@ class CustomerInteraction(Base):
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sentiment: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     performed_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     customer: Mapped["Customer"] = relationship(back_populates="interactions", lazy="selectin")
 
-# ==================== FINANCE ====================
+
 class Account(Base):
     __tablename__ = "accounts"
 
@@ -389,7 +386,7 @@ class Invoice(Base):
     amount_paid: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"))
     balance_due: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"))
     status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus), default=PaymentStatus.PENDING)
-    ai_risk_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    risk_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     customer: Mapped["Customer"] = relationship(lazy="selectin")
@@ -409,7 +406,7 @@ class Payment(Base):
 
     invoice: Mapped["Invoice"] = relationship(back_populates="payments", lazy="selectin")
 
-# ==================== HR ====================
+
 class Employee(Base):
     __tablename__ = "employees"
 
@@ -435,7 +432,7 @@ class Employee(Base):
     emergency_contact: Mapped[Optional[Dict]] = mapped_column(JSONB, nullable=True)
     skills: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String), nullable=True)
     certifications: Mapped[Optional[Dict]] = mapped_column(JSONB, nullable=True)
-    ai_performance_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    performance_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -456,8 +453,8 @@ class Timesheet(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft")
     approved_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    ai_anomaly_detected: Mapped[bool] = mapped_column(Boolean, default=False)
-    ai_anomaly_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    anomaly_detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    anomaly_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class LeaveRequest(Base):
@@ -473,10 +470,9 @@ class LeaveRequest(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     approved_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    ai_recommendation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-# ==================== PROCUREMENT ====================
+
 class Supplier(Base):
     __tablename__ = "suppliers"
 
@@ -491,7 +487,7 @@ class Supplier(Base):
     payment_terms: Mapped[str] = mapped_column(String(50), default="Net 30")
     lead_time_days: Mapped[int] = mapped_column(Integer, default=7)
     rating: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    ai_risk_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    risk_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -513,8 +509,8 @@ class PurchaseOrder(Base):
     tax_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"))
     total_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.00"))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
-    ai_optimized: Mapped[bool] = mapped_column(Boolean, default=False)
-    ai_optimization_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    optimized: Mapped[bool] = mapped_column(Boolean, default=False)
+    optimization_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -529,7 +525,7 @@ class PurchaseOrderLine(Base):
     line_total: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     received_quantity: Mapped[int] = mapped_column(Integer, default=0)
 
-# ==================== MANUFACTURING ====================
+
 class BOM(Base):
     __tablename__ = "boms"
 
@@ -542,6 +538,7 @@ class BOM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     lines: Mapped[List["BOMLine"]] = relationship(back_populates="bom", lazy="selectin")
+    manufacturing_orders: Mapped[List["ManufacturingOrder"]] = relationship(back_populates="bom", lazy="selectin")
 
 class BOMLine(Base):
     __tablename__ = "bom_lines"
@@ -549,32 +546,39 @@ class BOMLine(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     bom_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("boms.id"), nullable=False)
     component_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id"), nullable=False)
-    quantity_required: Mapped[float] = mapped_column(Float, nullable=False)
+    quantity_required: Mapped[Decimal] = mapped_column(Numeric(15, 4), nullable=False)
     unit_of_measure: Mapped[str] = mapped_column(String(20), nullable=False)
-    scrap_factor: Mapped[float] = mapped_column(Float, default=0.0)
+    scrap_percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal('0.00'))
 
     bom: Mapped["BOM"] = relationship(back_populates="lines", lazy="selectin")
     component: Mapped["Product"] = relationship(foreign_keys=[component_id], lazy="selectin")
 
-class WorkOrder(Base):
-    __tablename__ = "work_orders"
+class ManufacturingOrder(Base):
+    __tablename__ = "manufacturing_orders"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    wo_number: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    order_number: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id"), nullable=False)
     bom_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("boms.id"), nullable=False)
-    quantity_planned: Mapped[int] = mapped_column(Integer, nullable=False)
-    quantity_completed: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[str] = mapped_column(String(20), default="planned")
-    scheduled_start: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    scheduled_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    quantity_to_produce: Mapped[Decimal] = mapped_column(Numeric(15, 4), nullable=False)
+    quantity_completed: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=Decimal('0.00'))
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft, planned, in_progress, completed, cancelled
+    scheduled_start: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    scheduled_end: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     actual_start: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     actual_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    ai_efficiency_forecast: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-# ==================== PROJECTS ====================
+    bom: Mapped["BOM"] = relationship(back_populates="manufacturing_orders", lazy="selectin")
+    product: Mapped["Product"] = relationship(foreign_keys=[product_id], lazy="selectin")
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "order_number", name="uq_mo_tenant_order_number"),
+    )
+
+
 class Project(Base):
     __tablename__ = "projects"
 
@@ -592,7 +596,7 @@ class Project(Base):
     progress_percent: Mapped[int] = mapped_column(Integer, default=0)
     project_manager: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     client_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("customers.id"), nullable=True)
-    ai_risk_assessment: Mapped[Optional[Dict]] = mapped_column(JSONB, nullable=True)
+    risk_assessment: Mapped[Optional[Dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -618,13 +622,13 @@ class ProjectTask(Base):
     start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    ai_time_estimate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    time_estimate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     parent_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("project_tasks.id"), nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="tasks", lazy="selectin")
     parent: Mapped[Optional["ProjectTask"]] = relationship(remote_side=["ProjectTask.id"], lazy="selectin")
 
-# ==================== COMPLIANCE ====================
+
 class ComplianceDocument(Base):
     __tablename__ = "compliance_documents"
 
@@ -637,8 +641,8 @@ class ComplianceDocument(Base):
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     risk_level: Mapped[ComplianceLevel] = mapped_column(Enum(ComplianceLevel), default=ComplianceLevel.LOW)
-    ai_compliance_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    ai_review_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    compliance_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    review_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     expiry_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     approved_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -657,8 +661,8 @@ class AuditLog(Base):
     new_values: Mapped[Optional[Dict]] = mapped_column(JSONB, nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    ai_detected_anomaly: Mapped[bool] = mapped_column(Boolean, default=False)
-    ai_anomaly_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    anomaly_detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    anomaly_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped[Optional["User"]] = relationship(back_populates="audit_logs", lazy="selectin")
@@ -667,45 +671,4 @@ class AuditLog(Base):
         Index("ix_audit_logs_tenant_created", "tenant_id", "created_at"),
         Index("ix_audit_logs_entity", "entity_type", "entity_id"),
         Index("ix_audit_logs_action", "action", "created_at"),
-    )
-
-# ==================== AI SYSTEM ====================
-class AIAgentRun(Base):
-    __tablename__ = "ai_agent_runs"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    agent_name: Mapped[str] = mapped_column(String(50), nullable=False)
-    skill_used: Mapped[str] = mapped_column(String(50), nullable=False)
-    input_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    output_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    model_used: Mapped[str] = mapped_column(String(50), nullable=False)
-    tokens_used: Mapped[int] = mapped_column(Integer, default=0)
-    cost_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6), nullable=True)
-    execution_time_ms: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[str] = mapped_column(String(20), default="success")
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    triggered_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        Index("ix_ai_runs_tenant_agent", "tenant_id", "agent_name"),
-        Index("ix_ai_runs_created", "created_at"),
-    )
-
-class AIConversation(Base):
-    __tablename__ = "ai_conversations"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-    session_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    role: Mapped[str] = mapped_column(String(20), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    model: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    tokens: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        Index("ix_ai_conversations_session", "session_id", "created_at"),
     )

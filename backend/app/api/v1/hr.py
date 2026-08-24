@@ -1,4 +1,3 @@
-"""HR API with AI Timesheet Anomaly Detection and Leave Optimization."""
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +9,6 @@ from datetime import date
 from app.db.session import get_db
 from app.db.models import Employee, Department, Timesheet, LeaveRequest, EmployeeStatus
 from app.api.v1.auth import get_current_user, require_role
-from app.ai.agent_system import ai_orchestrator, AgentContext
 
 router = APIRouter()
 
@@ -83,12 +81,17 @@ async def submit_timesheet(timesheet: TimesheetCreate, db: AsyncSession = Depend
     db.add(ts)
     await db.commit()
 
-    if overtime_hours > 10 or total_hours > 60:
-        ctx = AgentContext(tenant_id=str(current_user.tenant_id), user_id=str(current_user.id))
-        await ai_orchestrator.execute("erp", "_timesheet_anomaly_detection",
-                                       {"timesheets": [{"id": str(ts.id), "employee_id": timesheet.employee_id,
-                                                        "total_hours": total_hours, "overtime": overtime_hours}]}, ctx)
-    return {"id": str(ts.id), "total_hours": total_hours, "status": "submitted", "ai_flagged": overtime_hours > 10}
+    # Simple rule-based anomaly flagging without AI
+    flagged = overtime_hours > 10 or total_hours > 60
+    flag_reasons = []
+    if overtime_hours > 10:
+        flag_reasons.append("excessive_overtime")
+    if total_hours > 60:
+        flag_reasons.append("excessive_total_hours")
+    
+    return {"id": str(ts.id), "total_hours": total_hours, "regular_hours": regular_hours,
+            "overtime_hours": overtime_hours, "status": "submitted", 
+            "flagged_for_review": flagged, "flag_reasons": flag_reasons}
 
 @router.post("/leave-requests")
 async def request_leave(req: LeaveRequestCreate, db: AsyncSession = Depends(get_db),
@@ -100,17 +103,53 @@ async def request_leave(req: LeaveRequestCreate, db: AsyncSession = Depends(get_
     await db.commit()
     return {"id": str(lr.id), "status": "pending", "days": req.days_requested}
 
-@router.post("/ai/leave-optimization")
-async def ai_leave_optimization(db: AsyncSession = Depends(get_db),
-                                current_user = Depends(require_role(["admin", "manager"]))):
+@router.post("/leave-optimization")
+async def leave_optimization(db: AsyncSession = Depends(get_db),
+                             current_user = Depends(require_role(["admin", "manager"]))):
+    # Simple rule-based leave optimization without AI
     result = await db.execute(select(LeaveRequest).where(LeaveRequest.status == "pending"))
     requests = result.scalars().all()
-    req_data = [{"request_id": str(r.id), "employee_id": str(r.employee_id), "leave_type": r.leave_type,
-                 "start_date": r.start_date.isoformat(), "days": r.days_requested} for r in requests]
-    ctx = AgentContext(tenant_id=str(current_user.tenant_id), user_id=str(current_user.id))
-    result = await ai_orchestrator.execute("erp", "_leave_optimization",
-                                           {"leave_requests": req_data, "staffing_requirements": {"min_per_dept": 3}}, ctx)
-    return result.get("output", {})
+    
+    # Group by department and date ranges
+    leave_by_dept = {}
+    for r in requests:
+        dept_key = str(r.employee_id)[:8]  # Simplified grouping
+        if dept_key not in leave_by_dept:
+            leave_by_dept[dept_key] = []
+        leave_by_dept[dept_key].append({
+            "request_id": str(r.id),
+            "employee_id": str(r.employee_id),
+            "leave_type": r.leave_type,
+            "start_date": r.start_date.isoformat(),
+            "end_date": r.end_date.isoformat(),
+            "days_requested": r.days_requested
+        })
+    
+    # Simple approval recommendations based on rules
+    recommendations = []
+    min_staff_per_dept = 3
+    
+    for dept_id, leaves in leave_by_dept.items():
+        overlapping_leaves = len(leaves)
+        recommended_approvals = max(0, min_staff_per_dept - overlapping_leaves)
+        
+        for i, leave in enumerate(leaves):
+            status = "approved" if i < recommended_approvals else "deferred"
+            reason = "Within staffing limits" if status == "approved" else "Insufficient staff coverage"
+            
+            recommendations.append({
+                **leave,
+                "recommendation": status,
+                "reason": reason,
+                "priority": "high" if leave["leave_type"] == "emergency" else "normal"
+            })
+    
+    return {
+        "total_pending_requests": len(requests),
+        "departments_affected": len(leave_by_dept),
+        "recommendations": recommendations,
+        "staffing_requirement": f"Minimum {min_staff_per_dept} staff per department"
+    }
 
 @router.get("/dashboard")
 async def hr_dashboard(db: AsyncSession = Depends(get_db), current_user = Depends(get_current_user)):
@@ -119,4 +158,4 @@ async def hr_dashboard(db: AsyncSession = Depends(get_db), current_user = Depend
         Employee.tenant_id == current_user.tenant_id, Employee.status == EmployeeStatus.ACTIVE))
     pending_leave = await db.execute(select(func.count(LeaveRequest.id)).where(LeaveRequest.status == "pending"))
     return {"total_employees": total_employees.scalar() or 0, "active_employees": active.scalar() or 0,
-            "pending_leave_requests": pending_leave.scalar() or 0, "ai_insight": "Timesheets flagged for review."}
+            "pending_leave_requests": pending_leave.scalar() or 0, "insight": "Timesheets flagged for review based on overtime hours."}

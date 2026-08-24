@@ -1,4 +1,3 @@
-"""Redis-based caching with TTL, serialization, and health checks."""
 import pickle
 from typing import Any, Optional
 import redis.asyncio as redis

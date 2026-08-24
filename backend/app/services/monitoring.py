@@ -1,4 +1,3 @@
-"""System metrics collection with Prometheus-compatible output."""
 import time
 import psutil
 from typing import Dict

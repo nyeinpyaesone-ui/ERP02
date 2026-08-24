@@ -1,4 +1,3 @@
-"""Procurement API Module"""
 from fastapi import APIRouter, Depends
 from app.api.v1.auth import get_current_user
 
@@ -10,4 +9,4 @@ async def procurement_root(current_user = Depends(get_current_user)):
 
 @router.get("/dashboard")
 async def procurement_dashboard(current_user = Depends(get_current_user)):
-    return {"module": "procurement", "ai_insight": "AI-powered insights available for procurement module."}
+    return {"module": "procurement", "insight": "Supplier performance metrics available for procurement module."}

@@ -1,4 +1,3 @@
-"""CRM API with AI Lead Scoring, Churn Prediction, and Sentiment Analysis."""
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.db.models import Customer, SalesOrder, SalesOrderLine, CustomerInteraction, OrderStatus
 from app.api.v1.auth import get_current_user, require_role
-from app.ai.agent_system import ai_orchestrator, AgentContext
 from app.services.cache_manager import cache_manager
 from app.services.event_bus import event_bus
 
@@ -49,7 +47,7 @@ async def list_customers(search: Optional[str] = None, customer_type: Optional[s
     customers = result.scalars().all()
     return [{"id": str(c.id), "customer_code": c.customer_code, "company_name": c.company_name,
              "first_name": c.first_name, "last_name": c.last_name, "email": c.email,
-             "credit_balance": float(c.credit_balance), "ai_score": c.ai_score, "is_active": c.is_active} for c in customers]
+             "credit_balance": float(c.credit_balance), "risk_score": c.risk_score, "is_active": c.is_active} for c in customers]
 
 @router.post("/customers")
 async def create_customer(customer: CustomerCreate, db: AsyncSession = Depends(get_db),
@@ -68,35 +66,115 @@ async def create_customer(customer: CustomerCreate, db: AsyncSession = Depends(g
 @router.post("/customers/{customer_id}/interactions")
 async def add_interaction(customer_id: str, interaction: InteractionCreate, db: AsyncSession = Depends(get_db),
                           current_user = Depends(get_current_user)):
-    ctx = AgentContext(tenant_id=str(current_user.tenant_id), user_id=str(current_user.id))
-    sentiment_result = await ai_orchestrator.execute("erp", "_natural_language_query",
-                                                       {"query": f"Analyze sentiment: {interaction.content or interaction.subject}"}, ctx)
+    # Simple sentiment analysis without AI
+    content = (interaction.content or interaction.subject).lower()
+    positive_words = ['good', 'great', 'excellent', 'happy', 'satisfied', 'positive', 'thank']
+    negative_words = ['bad', 'poor', 'terrible', 'angry', 'unsatisfied', 'negative', 'complaint', 'issue']
+    
+    positive_count = sum(1 for word in positive_words if word in content)
+    negative_count = sum(1 for word in negative_words if word in content)
+    
+    if positive_count > negative_count:
+        sentiment = "positive"
+    elif negative_count > positive_count:
+        sentiment = "negative"
+    else:
+        sentiment = "neutral"
 
     ci = CustomerInteraction(customer_id=UUID(customer_id), interaction_type=interaction.interaction_type,
                              subject=interaction.subject, content=interaction.content,
-                             sentiment=sentiment_result.get("output", {}).get("summary", "neutral")[:20],
-                             ai_summary=sentiment_result.get("output", {}).get("summary", "")[:200],
+                             sentiment=sentiment,
                              performed_by=current_user.id)
     db.add(ci)
     await db.commit()
-    return {"success": True, "interaction_id": str(ci.id), "ai_sentiment": ci.sentiment}
+    return {"success": True, "interaction_id": str(ci.id), "sentiment": ci.sentiment}
 
-@router.post("/ai/lead-scoring")
-async def ai_lead_scoring(req: LeadScoreRequest, db: AsyncSession = Depends(get_db),
-                          current_user = Depends(require_role(["admin", "manager"]))):
-    ctx = AgentContext(tenant_id=str(current_user.tenant_id), user_id=str(current_user.id))
-    result = await ai_orchestrator.execute("erp", "_lead_scoring", {"leads": req.leads}, ctx)
-    return result.get("output", [])
+@router.post("/lead-scoring")
+async def lead_scoring(req: LeadScoreRequest, db: AsyncSession = Depends(get_db),
+                       current_user = Depends(require_role(["admin", "manager"]))):
+    # Simple rule-based lead scoring without AI
+    scored_leads = []
+    for lead in req.leads:
+        score = 0
+        # Company size scoring
+        if lead.get('company_size', 0) > 100:
+            score += 30
+        elif lead.get('company_size', 0) > 50:
+            score += 20
+        elif lead.get('company_size', 0) > 10:
+            score += 10
+        
+        # Engagement scoring
+        if lead.get('email_opened', False):
+            score += 15
+        if lead.get('demo_requested', False):
+            score += 25
+        if lead.get('website_visits', 0) > 5:
+            score += 20
+        
+        # Budget scoring
+        budget = lead.get('estimated_budget', 0)
+        if budget > 50000:
+            score += 30
+        elif budget > 10000:
+            score += 15
+        
+        lead_score = min(100, score)
+        priority = "high" if lead_score >= 70 else "medium" if lead_score >= 40 else "low"
+        
+        scored_leads.append({
+            "lead_id": lead.get('id'),
+            "score": lead_score,
+            "priority": priority
+        })
+    
+    return scored_leads
 
-@router.post("/ai/churn-prediction")
-async def ai_churn_prediction(db: AsyncSession = Depends(get_db), current_user = Depends(require_role(["admin", "manager"]))):
+@router.post("/churn-prediction")
+async def churn_prediction(db: AsyncSession = Depends(get_db), current_user = Depends(require_role(["admin", "manager"]))):
+    # Simple rule-based churn prediction without AI
     result = await db.execute(select(Customer).where(Customer.tenant_id == current_user.tenant_id, Customer.is_active == True))
     customers = result.scalars().all()
-    customer_data = [{"customer_id": str(c.id), "days_since_last_purchase": 45, "purchase_frequency": 2.5,
-                      "support_tickets": 3, "payment_delays": 1, "contract_renewal_days": 90} for c in customers]
-    ctx = AgentContext(tenant_id=str(current_user.tenant_id), user_id=str(current_user.id))
-    result = await ai_orchestrator.execute("erp", "_churn_prediction", {"customers": customer_data[:50]}, ctx)
-    return result.get("output", [])
+    
+    churn_predictions = []
+    for c in customers[:50]:  # Limit to 50 for performance
+        risk_score = 0
+        
+        # Days since last purchase (simulated)
+        days_since_purchase = 45
+        if days_since_purchase > 90:
+            risk_score += 40
+        elif days_since_purchase > 60:
+            risk_score += 25
+        elif days_since_purchase > 30:
+            risk_score += 10
+        
+        # Support tickets (simulated)
+        support_tickets = 3
+        if support_tickets > 5:
+            risk_score += 30
+        elif support_tickets > 2:
+            risk_score += 15
+        
+        # Payment delays (simulated)
+        payment_delays = 1
+        if payment_delays > 3:
+            risk_score += 30
+        elif payment_delays > 0:
+            risk_score += 15
+        
+        churn_risk = min(100, risk_score)
+        risk_level = "high" if churn_risk >= 60 else "medium" if churn_risk >= 30 else "low"
+        
+        churn_predictions.append({
+            "customer_id": str(c.id),
+            "customer_name": f"{c.first_name} {c.last_name}",
+            "churn_risk_score": churn_risk,
+            "risk_level": risk_level,
+            "recommended_action": "Contact immediately" if risk_level == "high" else "Schedule check-in" if risk_level == "medium" else "Monitor"
+        })
+    
+    return churn_predictions
 
 @router.get("/dashboard")
 async def crm_dashboard(db: AsyncSession = Depends(get_db), current_user = Depends(get_current_user)):
@@ -105,4 +183,4 @@ async def crm_dashboard(db: AsyncSession = Depends(get_db), current_user = Depen
     revenue = await db.execute(select(func.sum(SalesOrder.total_amount)).where(
         SalesOrder.tenant_id == current_user.tenant_id, SalesOrder.status == OrderStatus.DELIVERED))
     return {"total_customers": total_customers.scalar() or 0, "total_orders": total_orders.scalar() or 0,
-            "total_revenue": float(revenue.scalar() or 0), "ai_insight": "Top customers at churn risk identified."}
+            "total_revenue": float(revenue.scalar() or 0), "insight": "Customer retention analysis based on order history."}

@@ -1,4 +1,3 @@
-"""Authentication & Authorization API with JWT, MFA-ready, and audit logging."""
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
